@@ -1,1 +1,2 @@
-# linux_scripts
+# Thesse are my automation scripts.
+
