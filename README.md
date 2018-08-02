@@ -1,2 +1,2 @@
-# Thesse are my automation scripts.
+# These are my automation scripts.
 
