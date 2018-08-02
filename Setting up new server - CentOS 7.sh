@@ -15,7 +15,7 @@ dns1=""
 dns2=""
 
 hostname=""
-proxy=""
+proxy="http://proxy.hcm.fpt.vn:80"
 bypass_proxy="localhost,127.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
 
@@ -100,7 +100,19 @@ then
     echo Set proxy to $http_proxy
 fi
 
+# Setting SSH
+echo -e "\n---------------------------------- Setting SSH ----------------------------------\n"
+sed -i '/^PasswordAuthentication/c\PasswordAuthentication no' /etc/ssh/sshd_config
+sed -i '/PermitRootLogin yes/c\PermitRootLogin no' /etc/ssh/sshd_config
+sed -i '/PubkeyAuthentication/c\PubkeyAuthentication yes' /etc/ssh/sshd_config
 
+cd /opt
+yum -y install git
+git clone https://github.com/anhnt094/ssh_public_keys.git
+cd /opt/ssh_public_keys
+sh *.sh
+systemctl restart sshd
+echo Setting SSH done !
 
 
 
