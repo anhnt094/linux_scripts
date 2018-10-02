@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # If use proxy, set "proxy=1". If don't use proxy, set "proxy=0"
-proxy=0
+proxy=1
 
 # Check root access
 if [[ "$EUID" -ne 0 ]]; then
@@ -9,13 +9,16 @@ if [[ "$EUID" -ne 0 ]]; then
 	exit 1
 fi
 
-
 echo "nrpe            5666/tcp                # NRPE" >> /etc/services
 
-yum -y install bind-utils php chrony openssl-devel make gcc wget perl
+if [ $proxy -eq 1 ]
+then
+  echo -e "https_proxy = http://proxy.hcm.fpt.vn:80/\nhttp_proxy = http://proxy.hcm.fpt.vn:80/" >> /etc/yum.conf
+fi
 
-systemctl enable chronyd
-systemctl start chronyd 
+# Install required libraries
+echo -e "\n---------------------------------- Installing required libraries ----------------------------------\n"
+yum -y install bind-utils openssl-devel make gcc wget perl unzip
 
 if [ $proxy -eq 1 ]
 then
@@ -26,14 +29,13 @@ fi
 echo -e "\n---------------------------------- Installing nrpe ----------------------------------\n"
 yum -y install nrpe nagios-plugins nagios-plugins-nrpe
 
+# Backup iptable rules
+echo -e "\n---------------------------------- Backup iptable rules ----------------------------------\n"
+mkdir -p /backup && cp /etc/sysconfig/iptables /backup
+
 # Add iptable rules
 echo -e "\n---------------------------------- Adding iptable rules ----------------------------------\n"
 
-iptables -A INPUT -p udp -m udp --dport 53 -m comment --comment "Allow DNS"  -j ACCEPT
-iptables -A INPUT -p tcp --sport 587 -m state --state ESTABLISHED -j ACCEPT
-iptables -A OUTPUT  -p tcp --dport 587 -m state --state NEW,ESTABLISHED -j ACCEPT
-iptables -A INPUT -s 210.245.0.128/25 -p tcp -m state --state NEW -m tcp  --dport 22 -m comment --comment "Allow SSH"  -j ACCEPT
-iptables -A INPUT -p tcp -m tcp  --dport 2812 -m comment --comment "Allow monit"  -j ACCEPT
 iptables -A INPUT -p tcp -s 172.20.19.100 -m tcp --dport 10050 -m comment --comment "Allow Zabbix" -j ACCEPT
 iptables -A INPUT -s 172.31.2.21 -m comment --comment "Opview New" -j ACCEPT
 iptables -A INPUT -s 210.245.31.162 -m comment --comment "Opview New" -j ACCEPT
@@ -48,8 +50,16 @@ iptables -A OUTPUT -d 210.245.31.160 -p icmp -m icmp --icmp-type 0 -m state --st
 iptables -A OUTPUT -d 210.245.31.149 -p icmp -m icmp --icmp-type 0 -m state --state RELATED,ESTABLISHED -m comment --comment "Allow Monitor Ping" -j ACCEPT
 iptables -A OUTPUT -d 210.245.0.128/25 -p icmp -m icmp --icmp-type 0 -m state --state RELATED,ESTABLISHED -m comment --comment "Allow Monitor Ping" -j ACCEPT
 iptables -A OUTPUT -d 210.245.0.128/25 -p udp -m udp --dport 161 -m state --state NEW,RELATED,ESTABLISHED -m comment --comment "Allow SNMP monitor" -j ACCEPT
-iptables -A INPUT -j REJECT --reject-with icmp-port-unreachable
 iptables -A INPUT -p icmp -m icmp --icmp-type 8 -m state --state NEW,RELATED,ESTABLISHED -j ACCEPT
+
+service iptables save
+service iptables reload
+
+echo Done \!
+
+# Backup nrpe configuration file
+echo -e "\n---------------------------------- Backup NRPE configuration file ----------------------------------\n"
+mkdir -p /backup && cp /etc/nagios/nrpe.cfg /backup
 
 # Edit nrpe configuration file
 echo -e "\n---------------------------------- Editing NRPE configuration file ----------------------------------\n"
@@ -76,12 +86,14 @@ echo -e "command[check_swap]=/usr/lib64/nagios/plugins/check_snmp -H 127.0.0.1 -
 echo -e "\n---------------------------------- Adding NAGIOS plugin ----------------------------------\n"
 mkdir ~/nrpe_src
 cd ~/nrpe_src
-git clone https://github.com/hungpt91/plugins.git
-y | cp -r plugins/* /usr/lib64/nagios/plugins/
+wget https://github.com/hungpt91/plugins/archive/master.zip
+unzip master.zip
+mv plugins-master plugins
+echo y | cp -r plugins/* /usr/lib64/nagios/plugins/
 chmod 755 -R /usr/lib64/nagios/plugins/*
 chown nrpe. -R /usr/lib64/nagios/plugins/*
-systemctl enable nrpe
-systemctl start nrpe
+chkconfig nrpe on
+service nrpe restart 
 
 # Check NRPE
 echo -e "\n---------------------------------- Checking NRPE ----------------------------------\n"
@@ -93,10 +105,10 @@ netstat -tulpn | grep 5666
 echo -e "\n---------------------------------- Installing snmp ----------------------------------\n"
 
 yum -y install net-snmp net-snmp-utils
-y | mv /etc/snmp/snmpd.conf /etc/snmp/snmpd.conf.orig
+mv -i /etc/snmp/snmpd.conf /etc/snmp/snmpd.conf.orig
 echo "rocommunity public" > /etc/snmp/snmpd.conf
-systemctl enable snmpd
-systemctl restart snmpd
+chkconfig snmpd on
+service snmpd restart
 
 # Check SNMP
 echo -e "\n---------------------------------- Checking snmp ----------------------------------\n"
